@@ -51,7 +51,7 @@ WAVE_OPTS   := +define+VCD_DUMP
 #==============================================================================
 IVERILOG    := iverilog
 VVP         := vvp
-IVERILOG_FLAGS := -g2012 -Wall -Wno-timescale
+IVERILOG_FLAGS := -g2012 -Wall -Wno-timescale -I$(PKG_DIR)
 
 #==============================================================================
 # Verilator Configuration
@@ -113,10 +113,10 @@ iverilog: $(WORK_DIR) $(LOG_DIR) $(WAVE_DIR)
 	@echo "========================================"
 	@echo "Compiling with Icarus Verilog..."
 	@echo "========================================"
-	$(IVERILOG) $(IVERILOG_FLAGS) $(SIM_OPTS) $(WAVE_OPTS) \
+	$(IVERILOG) $(IVERILOG_FLAGS) -DSIMULATION -DVCD_DUMP \
 		-s $(TOP_MODULE) \
 		-o $(WORK_DIR)/$(TOP_MODULE).vvp \
-		$(ALL_FILES) 2>&1 | tee $(LOG_DIR)/compile.log
+		$(RTL_FILES) $(TB_FILES) 2>&1 | tee $(LOG_DIR)/compile.log
 	@echo "========================================"
 	@echo "Running simulation..."
 	@echo "========================================"

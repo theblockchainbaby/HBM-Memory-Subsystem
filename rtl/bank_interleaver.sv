@@ -9,8 +9,9 @@
 // - Bank conflict detection and tracking
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module bank_interleaver
-    import hbm_params_pkg::*;
 (
     input  logic                        clk,
     input  logic                        rst_n,
@@ -75,12 +76,8 @@ module bank_interleaver
     logic [BANK_ADDR_WIDTH-1:0] round_robin_counter;
 
     // Response tracking
-    typedef struct packed {
-        logic       valid;
-        logic [7:0] tag;
-    } pending_resp_t;
-
-    pending_resp_t pending_responses [16];  // Track up to 16 outstanding requests
+    logic          pending_resp_valid [16];  // Track up to 16 outstanding requests
+    logic [7:0]    pending_resp_tag   [16];
     logic [3:0]    pending_head;
     logic [3:0]    pending_tail;
 
@@ -190,21 +187,22 @@ module bank_interleaver
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (int i = 0; i < 16; i++) begin
-                pending_responses[i] <= '0;
+                pending_resp_valid[i] <= 1'b0;
+                pending_resp_tag[i] <= '0;
             end
             pending_head <= '0;
             pending_tail <= '0;
         end else begin
             // Add new pending response when request is sent
             if (input_buffer_full && ctrl_ready && !input_buffer.write) begin
-                pending_responses[pending_tail].valid <= 1'b1;
-                pending_responses[pending_tail].tag <= input_buffer.tag;
+                pending_resp_valid[pending_tail] <= 1'b1;
+                pending_resp_tag[pending_tail] <= input_buffer.tag;
                 pending_tail <= pending_tail + 1;
             end
 
             // Remove pending response when response received
             if (ctrl_resp_valid && ctrl_resp.valid) begin
-                pending_responses[pending_head].valid <= 1'b0;
+                pending_resp_valid[pending_head] <= 1'b0;
                 pending_head <= pending_head + 1;
             end
         end
@@ -299,7 +297,7 @@ module bank_interleaver
     property p_response_tag_match;
         @(posedge clk) disable iff (!rst_n)
         (ctrl_resp_valid && ctrl_resp.valid) |->
-            (ctrl_resp.tag == pending_responses[pending_head].tag);
+            (ctrl_resp.tag == pending_resp_tag[pending_head]);
     endproperty
     assert property (p_response_tag_match) else
         $warning("Response tag mismatch");

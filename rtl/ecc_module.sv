@@ -9,8 +9,9 @@
 // - Supports error injection for testing
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module ecc_module
-    import hbm_params_pkg::*;
 (
     input  logic                        clk,
     input  logic                        rst_n,

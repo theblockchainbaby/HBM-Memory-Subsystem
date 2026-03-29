@@ -39,8 +39,9 @@
 //
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module hbm_subsystem_top
-    import hbm_params_pkg::*;
 (
     input  logic                        clk,
     input  logic                        rst_n,
@@ -481,7 +482,7 @@ module hbm_subsystem_top
 
     always_comb begin
         for (int b = 0; b < NUM_BANKS; b++) begin
-            status_bank_states[b] = bank_states[b];
+            status_bank_states[b] = bank_state_t'(bank_states[b]);
         end
     end
 

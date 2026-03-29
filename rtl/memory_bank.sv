@@ -9,8 +9,9 @@
 // - Memory array storage
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module memory_bank
-    import hbm_params_pkg::*;
 #(
     parameter int BANK_ID = 0
 )(

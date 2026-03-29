@@ -8,8 +8,9 @@
 // - Provides AXI-like interface to system
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module wide_bus_interface
-    import hbm_params_pkg::*;
 (
     input  logic                        clk,
     input  logic                        rst_n,

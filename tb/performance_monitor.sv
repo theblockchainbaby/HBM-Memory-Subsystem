@@ -9,8 +9,9 @@
 // - Real-time bandwidth measurement
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module performance_monitor
-    import hbm_params_pkg::*;
 #(
     parameter int LATENCY_BINS = 32,      // Number of histogram bins
     parameter int LATENCY_BIN_SIZE = 10   // Cycles per bin
@@ -96,16 +97,14 @@ module performance_monitor
     // Cycle counter
     logic [63:0] cycle_count;
 
-    // Transaction tracking
-    typedef struct packed {
-        logic        valid;
-        logic [63:0] start_cycle;
-        logic [ADDR_WIDTH-1:0] addr;
-    } pending_trans_t;
-
     // Pending transaction queues (simplified - track up to 16 outstanding)
-    pending_trans_t pending_reads [16];
-    pending_trans_t pending_writes [16];
+    logic          pend_rd_valid       [16];
+    logic [63:0]   pend_rd_start_cycle [16];
+    logic [ADDR_WIDTH-1:0] pend_rd_addr [16];
+
+    logic          pend_wr_valid       [16];
+    logic [63:0]   pend_wr_start_cycle [16];
+    logic [ADDR_WIDTH-1:0] pend_wr_addr [16];
     logic [3:0]     read_head, read_tail;
     logic [3:0]     write_head, write_tail;
 
@@ -162,22 +161,24 @@ module performance_monitor
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n || clear) begin
             for (int i = 0; i < 16; i++) begin
-                pending_reads[i] <= '0;
+                pend_rd_valid[i] <= 1'b0;
+                pend_rd_start_cycle[i] <= '0;
+                pend_rd_addr[i] <= '0;
             end
             read_head <= '0;
             read_tail <= '0;
         end else if (enable) begin
             // Track new read request
             if (ar_valid && ar_ready) begin
-                pending_reads[read_tail].valid <= 1'b1;
-                pending_reads[read_tail].start_cycle <= cycle_count;
-                pending_reads[read_tail].addr <= ar_addr;
+                pend_rd_valid[read_tail] <= 1'b1;
+                pend_rd_start_cycle[read_tail] <= cycle_count;
+                pend_rd_addr[read_tail] <= ar_addr;
                 read_tail <= read_tail + 1;
             end
 
             // Complete read transaction
             if (r_valid && r_ready && r_last) begin
-                pending_reads[read_head].valid <= 1'b0;
+                pend_rd_valid[read_head] <= 1'b0;
                 read_head <= read_head + 1;
             end
         end
@@ -190,22 +191,24 @@ module performance_monitor
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n || clear) begin
             for (int i = 0; i < 16; i++) begin
-                pending_writes[i] <= '0;
+                pend_wr_valid[i] <= 1'b0;
+                pend_wr_start_cycle[i] <= '0;
+                pend_wr_addr[i] <= '0;
             end
             write_head <= '0;
             write_tail <= '0;
         end else if (enable) begin
             // Track new write request
             if (aw_valid && aw_ready) begin
-                pending_writes[write_tail].valid <= 1'b1;
-                pending_writes[write_tail].start_cycle <= cycle_count;
-                pending_writes[write_tail].addr <= aw_addr;
+                pend_wr_valid[write_tail] <= 1'b1;
+                pend_wr_start_cycle[write_tail] <= cycle_count;
+                pend_wr_addr[write_tail] <= aw_addr;
                 write_tail <= write_tail + 1;
             end
 
             // Complete write transaction
             if (b_valid && b_ready) begin
-                pending_writes[write_head].valid <= 1'b0;
+                pend_wr_valid[write_head] <= 1'b0;
                 write_head <= write_head + 1;
             end
         end
@@ -222,8 +225,8 @@ module performance_monitor
     logic [31:0] write_bin_calc;
 
     always_comb begin
-        read_latency_calc = cycle_count[31:0] - pending_reads[read_head].start_cycle[31:0];
-        write_latency_calc = cycle_count[31:0] - pending_writes[write_head].start_cycle[31:0];
+        read_latency_calc = cycle_count[31:0] - pend_rd_start_cycle[read_head][31:0];
+        write_latency_calc = cycle_count[31:0] - pend_wr_start_cycle[write_head][31:0];
         read_bin_calc = read_latency_calc / LATENCY_BIN_SIZE;
         write_bin_calc = write_latency_calc / LATENCY_BIN_SIZE;
         if (read_bin_calc >= LATENCY_BINS) read_bin_calc = LATENCY_BINS - 1;
@@ -246,7 +249,7 @@ module performance_monitor
             end
         end else if (enable) begin
             // Calculate read latency on completion
-            if (r_valid && r_ready && r_last && pending_reads[read_head].valid) begin
+            if (r_valid && r_ready && r_last && pend_rd_valid[read_head]) begin
                 total_read_latency <= total_read_latency + read_latency_calc;
                 read_count <= read_count + 1;
 
@@ -258,7 +261,7 @@ module performance_monitor
             end
 
             // Calculate write latency on completion
-            if (b_valid && b_ready && pending_writes[write_head].valid) begin
+            if (b_valid && b_ready && pend_wr_valid[write_head]) begin
                 total_write_latency <= total_write_latency + write_latency_calc;
                 write_count <= write_count + 1;
 

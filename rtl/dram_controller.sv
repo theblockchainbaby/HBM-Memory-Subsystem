@@ -9,8 +9,9 @@
 // - Refresh management
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module dram_controller
-    import hbm_params_pkg::*;
 (
     input  logic                        clk,
     input  logic                        rst_n,
@@ -64,13 +65,6 @@ module dram_controller
         CTRL_POWER_DOWN
     } ctrl_state_t;
 
-    // Pending request entry
-    typedef struct packed {
-        logic                          valid;
-        mem_request_t                  request;
-        logic [15:0]                   age;  // For aging-based priority
-    } pending_req_t;
-
     //=========================================================================
     // Internal Signals
     //=========================================================================
@@ -82,8 +76,10 @@ module dram_controller
     mem_request_t current_req;
     logic         current_req_valid;
 
-    // Request queue (simple 4-entry queue per bank)
-    pending_req_t req_queue [NUM_BANKS][4];
+    // Request queue (simple 4-entry queue per bank) - split into separate arrays
+    logic          rq_valid   [NUM_BANKS][4];
+    mem_request_t  rq_request [NUM_BANKS][4];
+    logic [15:0]   rq_age     [NUM_BANKS][4];
     logic [1:0]   queue_head [NUM_BANKS];
     logic [1:0]   queue_tail [NUM_BANKS];
     logic [2:0]   queue_count [NUM_BANKS];
@@ -126,7 +122,7 @@ module dram_controller
         if (!rst_n) begin
             for (int b = 0; b < NUM_BANKS; b++) begin
                 for (int i = 0; i < 4; i++) begin
-                    req_queue[b][i].valid <= 1'b0;
+                    rq_valid[b][i] <= 1'b0;
                 end
                 queue_head[b] <= '0;
                 queue_tail[b] <= '0;
@@ -135,9 +131,9 @@ module dram_controller
         end else begin
             // Enqueue new request
             if (req_in.valid && req_ready) begin
-                req_queue[req_in.bank_addr][queue_tail[req_in.bank_addr]].valid   <= 1'b1;
-                req_queue[req_in.bank_addr][queue_tail[req_in.bank_addr]].request <= req_in;
-                req_queue[req_in.bank_addr][queue_tail[req_in.bank_addr]].age     <= '0;
+                rq_valid[req_in.bank_addr][queue_tail[req_in.bank_addr]]   <= 1'b1;
+                rq_request[req_in.bank_addr][queue_tail[req_in.bank_addr]] <= req_in;
+                rq_age[req_in.bank_addr][queue_tail[req_in.bank_addr]]     <= '0;
                 queue_tail[req_in.bank_addr] <= queue_tail[req_in.bank_addr] + 1;
                 queue_count[req_in.bank_addr] <= queue_count[req_in.bank_addr] + 1;
             end
@@ -145,7 +141,7 @@ module dram_controller
             // Dequeue when request is processed
             if (current_req_valid &&
                 (ctrl_state == CTRL_READ || ctrl_state == CTRL_WRITE)) begin
-                req_queue[current_req.bank_addr][queue_head[current_req.bank_addr]].valid <= 1'b0;
+                rq_valid[current_req.bank_addr][queue_head[current_req.bank_addr]] <= 1'b0;
                 queue_head[current_req.bank_addr] <= queue_head[current_req.bank_addr] + 1;
                 queue_count[current_req.bank_addr] <= queue_count[current_req.bank_addr] - 1;
             end
@@ -153,8 +149,8 @@ module dram_controller
             // Age all pending requests
             for (int b = 0; b < NUM_BANKS; b++) begin
                 for (int i = 0; i < 4; i++) begin
-                    if (req_queue[b][i].valid && req_queue[b][i].age < 16'hFFFF) begin
-                        req_queue[b][i].age <= req_queue[b][i].age + 1;
+                    if (rq_valid[b][i] && rq_age[b][i] < 16'hFFFF) begin
+                        rq_age[b][i] <= rq_age[b][i] + 1;
                     end
                 end
             end
@@ -291,15 +287,19 @@ module dram_controller
 
     // Select bank with oldest request (simple round-robin with aging)
     logic [15:0] max_age_comb;
+    // Helper signal to capture the head-of-queue request for the selected bank
+    mem_request_t selected_req;
     always_comb begin
         selected_bank = '0;
         max_age_comb = '0;
+        selected_req = '0;
 
         for (int b = 0; b < NUM_BANKS; b++) begin
-            if (bank_ready[b] && req_queue[b][queue_head[b]].valid) begin
-                if (req_queue[b][queue_head[b]].age > max_age_comb) begin
-                    max_age_comb = req_queue[b][queue_head[b]].age;
+            if (bank_ready[b] && rq_valid[b][queue_head[b]]) begin
+                if (rq_age[b][queue_head[b]] > max_age_comb) begin
+                    max_age_comb = rq_age[b][queue_head[b]];
                     selected_bank = b[BANK_ADDR_WIDTH-1:0];
+                    selected_req = rq_request[b][queue_head[b]];
                 end
             end
         end
@@ -319,7 +319,7 @@ module dram_controller
             // Capture current request
             if (ctrl_state == CTRL_IDLE && ctrl_state_next != CTRL_IDLE) begin
                 if (ctrl_state_next != CTRL_REFRESH && ctrl_state_next != CTRL_POWER_DOWN) begin
-                    current_req <= req_queue[selected_bank][queue_head[selected_bank]].request;
+                    current_req <= selected_req;
                     current_req_valid <= 1'b1;
                 end
             end
@@ -347,9 +347,9 @@ module dram_controller
                             ctrl_state_next = CTRL_ACTIVATE;
                         end
                     end else if (bank_state[selected_bank] == BANK_ACTIVE) begin
-                        if (bank_open_row[selected_bank] == req_queue[selected_bank][queue_head[selected_bank]].request.row_addr) begin
+                        if (bank_open_row[selected_bank] == selected_req.row_addr) begin
                             // Row hit - can issue R/W directly
-                            if (req_queue[selected_bank][queue_head[selected_bank]].request.req_type == REQ_READ) begin
+                            if (selected_req.req_type == REQ_READ) begin
                                 ctrl_state_next = CTRL_READ;
                             end else begin
                                 ctrl_state_next = CTRL_WRITE;

@@ -1,0 +1,16 @@
+# Environment variables
+.env
+.env.local
+
+# OS files
+.DS_Store
+
+# Simulation outputs
+sim/work/
+sim/waves/
+sim/logs/
+
+# Python
+__pycache__/
+*.pyc
+venv/

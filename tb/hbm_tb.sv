@@ -12,8 +12,9 @@
 
 `timescale 1ns/1ps
 
+`include "hbm_params.vh"
+
 module hbm_tb;
-    import hbm_params_pkg::*;
 
     //=========================================================================
     // Parameters
@@ -518,7 +519,7 @@ module hbm_tb;
         repeat(100) @(posedge clk);
 
         // Check if transitioned to idle
-        $display("[%0t] Current power state: %s", $time, status_power_state.name());
+        $display("[%0t] Current power state: %0d", $time, status_power_state);
 
         // Generate traffic to wake up
         run_traffic_pattern("Wake-up Traffic", 3'b000, 10, 8'd128);

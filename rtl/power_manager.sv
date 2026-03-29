@@ -9,8 +9,9 @@
 // - Power consumption estimation
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module power_manager
-    import hbm_params_pkg::*;
 (
     input  logic                        clk,
     input  logic                        rst_n,
@@ -292,11 +293,11 @@ module power_manager
     // Output Assignments
     //=========================================================================
 
-    assign current_power_state = waking_up ? PWR_ACTIVE : pwr_state;
+    assign current_power_state = power_state_t'(waking_up ? PWR_ACTIVE : pwr_state);
 
     always_comb begin
         for (int b = 0; b < NUM_BANKS; b++) begin
-            bank_power_states[b] = bank_pwr_state[b];
+            bank_power_states[b] = power_state_t'(bank_pwr_state[b]);
         end
     end
 
@@ -311,7 +312,7 @@ module power_manager
     // Debug Display
     //=========================================================================
 
-    `ifdef SIMULATION
+    `ifdef SVA_ENABLE
     power_state_t prev_state;
 
     always @(posedge clk) begin
@@ -329,7 +330,7 @@ module power_manager
     // Assertions
     //=========================================================================
 
-    `ifdef SIMULATION
+    `ifdef SVA_ENABLE
     // Cannot transition directly from power-down to active without wake-up
     property p_wakeup_required;
         @(posedge clk) disable iff (!rst_n)

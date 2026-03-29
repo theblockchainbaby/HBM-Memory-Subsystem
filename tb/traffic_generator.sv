@@ -9,8 +9,9 @@
 // - Burst pattern with configurable length
 //=============================================================================
 
+`include "hbm_params.vh"
+
 module traffic_generator
-    import hbm_params_pkg::*;
 #(
     parameter int SEED = 12345
 )(
